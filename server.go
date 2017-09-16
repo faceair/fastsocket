@@ -45,7 +45,7 @@ func (s *Server) Listen(addr string) error {
 	return nil
 }
 
-func (s *Server) Accept(acceptFn func(clientfd int)) error {
+func (s *Server) Accept(acceptFn func(net.Conn)) error {
 	// Create netpoll descriptor for the listener.
 	// We use OneShot here to manually resume events stream when we want to.
 	s.acceptDesc = netpoll.NewDesc(uintptr(s.listenfd), netpoll.EventRead|netpoll.EventOneShot)
@@ -65,7 +65,7 @@ func (s *Server) Accept(acceptFn func(clientfd int)) error {
 			}
 
 			accept <- nil
-			acceptFn(clientfd)
+			acceptFn(NewConn(clientfd))
 		})
 		if err == nil {
 			err = <-accept
@@ -77,7 +77,6 @@ func (s *Server) Accept(acceptFn func(clientfd int)) error {
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
 				goto cooldown
 			}
-
 			log.Fatalf("accept error: %v", err)
 
 		cooldown:
