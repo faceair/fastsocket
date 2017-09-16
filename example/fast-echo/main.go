@@ -4,7 +4,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
-	"time"
 
 	"github.com/faceair/fastsocket"
 )
@@ -19,8 +18,8 @@ func main() {
 		if err != nil {
 			continue
 		}
-		socket := fastsocket.New(conn, time.Minute)
-		err = socket.OnData(func() {
+		socket := fastsocket.NewSocket(conn)
+		err = socket.OnReadable(func() {
 			data, _ := ioutil.ReadAll(conn)
 			log.Printf("%v", data)
 		}).OnClose(func() {

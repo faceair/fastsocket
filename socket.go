@@ -1,6 +1,7 @@
 package fastsocket
 
 import (
+	"bufio"
 	"errors"
 	"net"
 	"sync"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/mailru/easygo/netpoll"
 )
+
+const DefaultReadBuffSize = 1024 * 4
 
 var ErrSocketNeedMoreCallback = errors.New("socket need more callback")
 var ErrSocketAlreadyListen = errors.New("socket already listen")
@@ -22,38 +25,51 @@ func init() {
 	}
 }
 
-func New(conn net.Conn, timeout time.Duration) *Socket {
+func NewSocket(conn net.Conn) *Socket {
 	return &Socket{
 		Conn:    conn,
+		reader:  bufio.NewReaderSize(conn, DefaultReadBuffSize),
+		timeout: time.Minute,
+	}
+}
+
+func NewSocketSize(conn net.Conn, readBuffSize int, timeout time.Duration) *Socket {
+	return &Socket{
+		Conn:    conn,
+		reader:  bufio.NewReaderSize(conn, readBuffSize),
 		timeout: timeout,
 	}
 }
 
 type Socket struct {
 	net.Conn
-	io      sync.Mutex
-	timeout time.Duration
-	desc    *netpoll.Desc
-	onData  func()
-	onClose func()
-}
-
-func (s *Socket) Write(p []byte) (int, error) {
-	if err := s.Conn.SetWriteDeadline(CoarseTimeNow().Add(s.timeout)); err != nil {
-		return 0, err
-	}
-	return s.Conn.Write(p)
+	reader     *bufio.Reader
+	timeout    time.Duration
+	io         sync.Mutex
+	desc       *netpoll.Desc
+	onReadable func()
+	onClose    func()
 }
 
 func (s *Socket) Read(p []byte) (int, error) {
 	if err := s.Conn.SetReadDeadline(CoarseTimeNow().Add(s.timeout)); err != nil {
 		return 0, err
 	}
-	return s.Conn.Read(p)
+	return s.reader.Read(p)
 }
 
-func (s *Socket) OnData(onData func()) *Socket {
-	s.onData = onData
+func (s *Socket) OnReadable(onReadable func()) *Socket {
+	s.onReadable = func() {
+		for {
+			s.io.Lock()
+			onReadable()
+			s.io.Unlock()
+
+			if s.reader.Buffered() == 0 {
+				break
+			}
+		}
+	}
 	return s
 }
 
@@ -63,7 +79,7 @@ func (s *Socket) OnClose(onClose func()) *Socket {
 }
 
 func (s *Socket) Listen() error {
-	if s.onData == nil || s.onClose == nil {
+	if s.onReadable == nil || s.onClose == nil {
 		return ErrSocketNeedMoreCallback
 	}
 	// Create netpoll event descriptor for conn.
@@ -78,9 +94,8 @@ func (s *Socket) Listen() error {
 		if ev&(netpoll.EventReadHup|netpoll.EventHup) != 0 {
 			// When ReadHup or Hup received, this mean that client has
 			// closed at least write end of the connection or connections
-			// itself. So we want to stop receive events about such conn
-			// and remove it from the chat registry.
-			s.onClose()
+			// itself. So we want to stop receive events about such conn.
+			s.Close()
 			return
 		}
 		// Here we can read some new message from connection.
@@ -88,7 +103,7 @@ func (s *Socket) Listen() error {
 		// block the poller's inner loop.
 		// We do not want to spawn a new goroutine to read single message.
 		// But we want to reuse previously spawned goroutine.
-		s.onData()
+		s.onReadable()
 	})
 
 	return nil
@@ -100,5 +115,6 @@ func (s *Socket) Close() error {
 	}
 	poller.Stop(s.desc)
 	s.desc = nil
+	s.onClose()
 	return s.Conn.Close()
 }
