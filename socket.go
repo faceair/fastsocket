@@ -10,27 +10,10 @@ import (
 	"github.com/mailru/easygo/netpoll"
 )
 
-const DefaultPoolSize = 256 * 1024
 const DefaultReadBuffSize = 1024
 
 var ErrSocketNeedMoreCallback = errors.New("socket need more callback")
 var ErrSocketAlreadyListen = errors.New("socket already listen")
-
-var poller netpoll.Poller
-var pool *Pool
-
-func init() {
-	var err error
-	poller, err = netpoll.New(nil)
-	if err != nil {
-		panic(err)
-	}
-	pool = NewPool(DefaultPoolSize, 1, 1)
-}
-
-func SetWorkerPool(p *Pool) {
-	pool = p
-}
 
 func NewSocket(conn net.Conn) *Socket {
 	return &Socket{
@@ -55,7 +38,7 @@ type Socket struct {
 	Writer     *bufio.Writer
 	timeout    time.Duration
 	io         sync.Mutex
-	desc       *netpoll.Desc
+	readDesc   *netpoll.Desc
 	onReadable func()
 	onClose    func()
 }
@@ -101,13 +84,13 @@ func (s *Socket) Listen() error {
 	}
 	// Create netpoll event descriptor for conn.
 	// We want to handle only read events of it.
-	if s.desc != nil {
+	if s.readDesc != nil {
 		return ErrSocketAlreadyListen
 	}
-	s.desc = netpoll.Must(netpoll.HandleRead(s.Conn))
+	s.readDesc = netpoll.Must(netpoll.HandleRead(s.Conn))
 
 	// Subscribe to events about conn.
-	poller.Start(s.desc, func(ev netpoll.Event) {
+	poller.Start(s.readDesc, func(ev netpoll.Event) {
 		if ev&(netpoll.EventReadHup|netpoll.EventHup) != 0 {
 			// When ReadHup or Hup received, this mean that client has
 			// closed at least write end of the connection or connections
@@ -128,11 +111,11 @@ func (s *Socket) Listen() error {
 
 func (s *Socket) Close() error {
 	err := s.Conn.Close()
-	if s.desc == nil {
+	if s.readDesc == nil {
 		return err
 	}
-	poller.Stop(s.desc)
-	s.desc = nil
+	poller.Stop(s.readDesc)
+	s.readDesc = nil
 	s.onClose()
 	return err
 }
