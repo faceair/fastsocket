@@ -10,12 +10,14 @@ import (
 	"github.com/mailru/easygo/netpoll"
 )
 
-const DefaultReadBuffSize = 1024 * 4
+const DefaultPoolSize = 256 * 1024
+const DefaultReadBuffSize = 1024
 
 var ErrSocketNeedMoreCallback = errors.New("socket need more callback")
 var ErrSocketAlreadyListen = errors.New("socket already listen")
 
 var poller netpoll.Poller
+var pool *Pool
 
 func init() {
 	var err error
@@ -23,27 +25,34 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	pool = NewPool(DefaultPoolSize, 1, 1)
+}
+
+func SetWorkerPool(p *Pool) {
+	pool = p
 }
 
 func NewSocket(conn net.Conn) *Socket {
 	return &Socket{
 		Conn:    conn,
-		reader:  bufio.NewReaderSize(conn, DefaultReadBuffSize),
+		Reader:  bufio.NewReaderSize(conn, DefaultReadBuffSize),
 		timeout: time.Minute,
 	}
 }
 
-func NewSocketSize(conn net.Conn, readBuffSize int, timeout time.Duration) *Socket {
+func NewBufferedSocket(conn net.Conn, readBuffSize, writeBuffSize int, timeout time.Duration) *Socket {
 	return &Socket{
 		Conn:    conn,
-		reader:  bufio.NewReaderSize(conn, readBuffSize),
+		Reader:  bufio.NewReaderSize(conn, readBuffSize),
+		Writer:  bufio.NewWriterSize(conn, writeBuffSize),
 		timeout: timeout,
 	}
 }
 
 type Socket struct {
 	net.Conn
-	reader     *bufio.Reader
+	Reader     *bufio.Reader
+	Writer     *bufio.Writer
 	timeout    time.Duration
 	io         sync.Mutex
 	desc       *netpoll.Desc
@@ -51,11 +60,19 @@ type Socket struct {
 	onClose    func()
 }
 
-func (s *Socket) Read(p []byte) (int, error) {
+func (s *Socket) Read(b []byte) (int, error) {
 	if err := s.Conn.SetReadDeadline(CoarseTimeNow().Add(s.timeout)); err != nil {
 		return 0, err
 	}
-	return s.reader.Read(p)
+	return s.Reader.Read(b)
+}
+
+func (s *Socket) WriteDelay(b []byte) (int, error) {
+	return s.Writer.Write(b)
+}
+
+func (s *Socket) Flush() error {
+	return s.Writer.Flush()
 }
 
 func (s *Socket) OnReadable(onReadable func()) *Socket {
@@ -65,7 +82,7 @@ func (s *Socket) OnReadable(onReadable func()) *Socket {
 			onReadable()
 			s.io.Unlock()
 
-			if s.reader.Buffered() == 0 {
+			if s.Reader.Buffered() == 0 {
 				break
 			}
 		}
@@ -103,18 +120,19 @@ func (s *Socket) Listen() error {
 		// block the poller's inner loop.
 		// We do not want to spawn a new goroutine to read single message.
 		// But we want to reuse previously spawned goroutine.
-		s.onReadable()
+		pool.Schedule(s.onReadable)
 	})
 
 	return nil
 }
 
 func (s *Socket) Close() error {
+	err := s.Conn.Close()
 	if s.desc == nil {
-		return nil
+		return err
 	}
 	poller.Stop(s.desc)
 	s.desc = nil
 	s.onClose()
-	return s.Conn.Close()
+	return err
 }
