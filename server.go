@@ -64,20 +64,17 @@ func (s *Server) Accept(acceptFn func(net.Conn)) error {
 				acceptErr <- nil
 				return
 			}
-
-			if err = syscall.SetNonblock(clientfd, true); err != nil {
-				syscall.Close(clientfd)
-				acceptErr <- err
-				return
+			conn, err := NewConn(clientfd)
+			acceptErr <- err
+			if err == nil {
+				acceptFn(conn)
 			}
-			acceptErr <- nil
-			acceptFn(NewConn(clientfd))
 		})
 		if err == nil {
 			err = <-acceptErr
 		}
 		if err != nil {
-			if IsNetTemporary(err) || err != ErrScheduleTimeout {
+			if isNetTemporary(err) || err != ErrScheduleTimeout {
 				delay := 5 * time.Millisecond
 				log.Printf("accept error: %v; retrying in %s", err, delay)
 				time.Sleep(delay)

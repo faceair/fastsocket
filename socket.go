@@ -2,7 +2,6 @@ package fastsocket
 
 import (
 	"bufio"
-	"errors"
 	"net"
 	"sync"
 	"time"
@@ -11,9 +10,6 @@ import (
 )
 
 const DefaultReadBuffSize = 1024
-
-var ErrSocketNeedMoreCallback = errors.New("socket need more callback")
-var ErrSocketAlreadyListen = errors.New("socket already listen")
 
 func NewSocket(conn net.Conn) *Socket {
 	return &Socket{
@@ -80,12 +76,12 @@ func (s *Socket) OnClose(onClose func()) *Socket {
 
 func (s *Socket) Listen() error {
 	if s.onReadable == nil || s.onClose == nil {
-		return ErrSocketNeedMoreCallback
+		panic("socket need more callback")
 	}
 	// Create netpoll event descriptor for conn.
 	// We want to handle only read events of it.
 	if s.readDesc != nil {
-		return ErrSocketAlreadyListen
+		panic("socket already listen")
 	}
 	s.readDesc = netpoll.Must(netpoll.HandleRead(s.Conn))
 

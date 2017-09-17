@@ -2,17 +2,28 @@ package fastsocket
 
 import (
 	"net"
+	"os"
 	"syscall"
 )
 
-func IsNetTemporary(err error) bool {
+func isNetTemporary(err error) bool {
 	if err == syscall.EAGAIN {
+		return true
+	}
+	if pe, ok := err.(*os.PathError); ok && pe.Err == syscall.EAGAIN {
 		return true
 	}
 	if ne, ok := err.(net.Error); ok && ne.Temporary() {
 		return true
 	}
 	return false
+}
+
+func boolint(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func resolveSockAddr4(netaddr string) (syscall.Sockaddr, error) {
