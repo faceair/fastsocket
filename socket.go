@@ -110,12 +110,11 @@ func (s *Socket) Listen() error {
 }
 
 func (s *Socket) Close() error {
-	err := s.Conn.Close()
-	if s.readDesc == nil {
+	err := poller.Stop(s.readDesc)
+	if err != nil {
 		return err
 	}
-	poller.Stop(s.readDesc)
 	s.readDesc = nil
 	s.onClose()
-	return err
+	return s.Conn.Close()
 }

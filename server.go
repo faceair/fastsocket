@@ -50,39 +50,39 @@ func (s *Server) Accept(acceptFn func(net.Conn)) error {
 	// We use OneShot here to manually resume events stream when we want to.
 	s.acceptDesc = netpoll.NewDesc(uintptr(s.listenfd), netpoll.EventRead|netpoll.EventOneShot)
 
-	// accept is a channel to signal about next incoming connection Accept()
+	// acceptErr is a channel to signal about next incoming connection Accept()
 	// results.
-	accept := make(chan error, 1)
+	acceptErr := make(chan error, 1)
 	poller.Start(s.acceptDesc, func(ev netpoll.Event) {
 		err := pool.ScheduleTimeout(time.Millisecond, func() {
 			clientfd, _, err := syscall.Accept(s.listenfd)
 			if err != nil {
 				if err != syscall.EAGAIN {
-					accept <- err
+					acceptErr <- err
 					return
 				}
+				acceptErr <- nil
 				return
 			}
 
-			accept <- nil
+			if err = syscall.SetNonblock(clientfd, true); err != nil {
+				syscall.Close(clientfd)
+				acceptErr <- err
+				return
+			}
+			acceptErr <- nil
 			acceptFn(NewConn(clientfd))
 		})
 		if err == nil {
-			err = <-accept
+			err = <-acceptErr
 		}
 		if err != nil {
-			if err != ErrScheduleTimeout {
-				goto cooldown
-			}
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				goto cooldown
+			if IsNetTemporary(err) || err != ErrScheduleTimeout {
+				delay := 5 * time.Millisecond
+				log.Printf("accept error: %v; retrying in %s", err, delay)
+				time.Sleep(delay)
 			}
 			log.Fatalf("accept error: %v", err)
-
-		cooldown:
-			delay := 5 * time.Millisecond
-			log.Printf("accept error: %v; retrying in %s", err, delay)
-			time.Sleep(delay)
 		}
 
 		poller.Resume(s.acceptDesc)
