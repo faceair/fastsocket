@@ -6,8 +6,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/faceair/fastsocket/tcplisten"
 	"github.com/mailru/easygo/netpoll"
 )
+
+var tcpCfg = &tcplisten.Config{ReusePort: true, DeferAccept: true, FastOpen: true}
 
 func NewServer(addr string) (*Server, error) {
 	server := &Server{}
@@ -19,30 +22,9 @@ type Server struct {
 	acceptDesc *netpoll.Desc
 }
 
-func (s *Server) Listen(addr string) error {
-	lfd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, syscall.IPPROTO_TCP)
-	if err != nil {
-		return err
-	}
-	sa4, err := resolveSockAddr4(addr)
-	if err != nil {
-		return err
-	}
-	if err = syscall.Bind(lfd, sa4); err != nil {
-		syscall.Close(lfd)
-		return err
-	}
-	if err = syscall.Listen(lfd, syscall.SOMAXCONN); err != nil {
-		syscall.Close(lfd)
-		return err
-	}
-	if err = syscall.SetNonblock(lfd, true); err != nil {
-		syscall.Close(lfd)
-		return err
-	}
-
-	s.listenfd = lfd
-	return nil
+func (s *Server) Listen(addr string) (err error) {
+	s.listenfd, err = tcpCfg.NewFD("tcp4", addr)
+	return
 }
 
 func (s *Server) Accept(acceptFn func(net.Conn)) error {
