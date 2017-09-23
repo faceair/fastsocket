@@ -2,8 +2,10 @@ package fastsocket
 
 import (
 	"bufio"
+	"io"
 	"net"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/mailru/easygo/netpoll"
@@ -35,23 +37,41 @@ type Socket struct {
 	timeout    time.Duration
 	io         sync.Mutex
 	readDesc   *netpoll.Desc
+	writeDesc  *netpoll.Desc
 	onReadable func()
 	onClose    func()
 }
 
 func (s *Socket) Read(b []byte) (int, error) {
-	if err := s.Conn.SetReadDeadline(CoarseTimeNow().Add(s.timeout)); err != nil {
-		return 0, err
-	}
 	return s.Reader.Read(b)
+}
+
+func (s *Socket) Write(b []byte) (int, error) {
+	return s.Conn.Write(b)
 }
 
 func (s *Socket) WriteDelay(b []byte) (int, error) {
 	return s.Writer.Write(b)
 }
 
-func (s *Socket) Flush() error {
-	return s.Writer.Flush()
+func (s *Socket) Flush() {
+	err := s.Writer.Flush()
+	if err == io.ErrShortWrite || err == syscall.EAGAIN {
+		s.onWritAble(s.Flush)
+	}
+}
+
+func (s *Socket) onWritAble(onWritAble func()) {
+	s.writeDesc = netpoll.Must(netpoll.HandleWriteOnce(s.Conn))
+	poller.Start(s.writeDesc, func(ev netpoll.Event) {
+		if ev&netpoll.EventHup != 0 {
+			s.Close()
+			return
+		}
+		onWritAble()
+		poller.Stop(s.writeDesc)
+		s.writeDesc = nil
+	})
 }
 
 func (s *Socket) OnReadable(onReadable func()) *Socket {
@@ -99,7 +119,7 @@ func (s *Socket) Listen() error {
 		// block the poller's inner loop.
 		// We do not want to spawn a new goroutine to read single message.
 		// But we want to reuse previously spawned goroutine.
-		pool.Schedule(s.onReadable)
+		workerPool.Schedule(s.onReadable)
 	})
 
 	return nil

@@ -7,7 +7,7 @@ import (
 const DefaultPoolSize = 256 * 1024
 
 var poller netpoll.Poller
-var pool *Pool
+var workerPool *Pool
 
 func init() {
 	var err error
@@ -15,9 +15,10 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	pool = NewPool(DefaultPoolSize, 1, 1)
+
+	SetWorkerPool(NewPool(DefaultPoolSize, 1, 1))
 }
 
 func SetWorkerPool(p *Pool) {
-	pool = p
+	workerPool = p
 }

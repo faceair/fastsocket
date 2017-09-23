@@ -54,7 +54,7 @@ func (s *Server) Accept(acceptFn func(net.Conn)) error {
 	// results.
 	acceptErr := make(chan error, 1)
 	poller.Start(s.acceptDesc, func(ev netpoll.Event) {
-		err := pool.ScheduleTimeout(time.Millisecond, func() {
+		err := workerPool.ScheduleTimeout(time.Millisecond, func() {
 			clientfd, _, err := syscall.Accept(s.listenfd)
 			if err != nil {
 				if err != syscall.EAGAIN {
@@ -74,7 +74,7 @@ func (s *Server) Accept(acceptFn func(net.Conn)) error {
 			err = <-acceptErr
 		}
 		if err != nil {
-			if isNetTemporary(err) || err != ErrScheduleTimeout {
+			if ne, ok := err.(net.Error); ok && ne.Temporary() || err != ErrScheduleTimeout {
 				delay := 5 * time.Millisecond
 				log.Printf("accept error: %v; retrying in %s", err, delay)
 				time.Sleep(delay)

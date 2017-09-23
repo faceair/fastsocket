@@ -2,28 +2,23 @@ package fastsocket
 
 import (
 	"net"
-	"os"
 	"syscall"
 )
 
-func isNetTemporary(err error) bool {
-	if err == syscall.EAGAIN {
-		return true
-	}
-	if pe, ok := err.(*os.PathError); ok && pe.Err == syscall.EAGAIN {
-		return true
-	}
-	if ne, ok := err.(net.Error); ok && ne.Temporary() {
-		return true
-	}
-	return false
-}
-
-func boolint(b bool) int {
+func boolInt(b bool) int {
 	if b {
 		return 1
 	}
 	return 0
+}
+
+// Many functions in package syscall return a count of -1 instead of 0.
+// Using fixCount(call()) instead of call() corrects the count.
+func fixCount(n int, err error) (int, error) {
+	if n < 0 {
+		n = 0
+	}
+	return n, err
 }
 
 func resolveSockAddr4(netaddr string) (syscall.Sockaddr, error) {
