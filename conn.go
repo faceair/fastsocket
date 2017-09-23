@@ -4,6 +4,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -11,7 +12,7 @@ import (
 func NewConn(fd int) (*Conn, error) {
 	conn := &Conn{
 		fd: fd,
-		f:  os.NewFile(uintptr(fd), "tcp"),
+		f:  os.NewFile(uintptr(fd), "fastsocket.tcp."+strconv.Itoa(fd)),
 	}
 	err := conn.SetNoDelay(true)
 	if err != nil {
@@ -47,7 +48,11 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 }
 
 func (c *Conn) Write(b []byte) (n int, err error) {
-	return fixCount(syscall.Write(c.fd, b))
+	n, err = fixCount(syscall.Write(c.fd, b))
+	if n != len(b) && err == nil {
+		err = io.ErrShortWrite
+	}
+	return
 }
 
 func (c *Conn) Close() error {

@@ -56,12 +56,13 @@ func (s *Server) Accept(acceptFn func(net.Conn)) error {
 			err = <-acceptErr
 		}
 		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Temporary() || err != ErrScheduleTimeout {
+			if ne, ok := err.(net.Error); ok && ne.Temporary() || ne.Timeout() || err == ErrScheduleTimeout {
 				delay := 5 * time.Millisecond
 				log.Printf("accept error: %v; retrying in %s", err, delay)
 				time.Sleep(delay)
+			} else {
+				log.Fatalf("accept error: %v", err)
 			}
-			log.Fatalf("accept error: %v", err)
 		}
 
 		poller.Resume(s.acceptDesc)

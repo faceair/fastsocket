@@ -16,7 +16,7 @@ func init() {
 		panic(err)
 	}
 
-	SetWorkerPool(NewPool(DefaultPoolSize, 1, 1))
+	SetWorkerPool(NewPool(DefaultPoolSize, 1024, 256))
 }
 
 func SetWorkerPool(p *Pool) {

@@ -43,11 +43,24 @@ type Socket struct {
 }
 
 func (s *Socket) Read(b []byte) (int, error) {
-	return s.Reader.Read(b)
+	n, err := s.Reader.Read(b)
+	if err == syscall.EAGAIN {
+		err = io.EOF
+	}
+	if err == syscall.EBADF {
+		err = io.ErrUnexpectedEOF
+		s.Close()
+	}
+	return n, err
 }
 
 func (s *Socket) Write(b []byte) (int, error) {
-	return s.Conn.Write(b)
+	n, err := s.Conn.Write(b)
+	if err == syscall.EBADF {
+		err = io.ErrUnexpectedEOF
+		s.Close()
+	}
+	return n, err
 }
 
 func (s *Socket) WriteDelay(b []byte) (int, error) {
@@ -81,7 +94,7 @@ func (s *Socket) OnReadable(onReadable func()) *Socket {
 			onReadable()
 			s.io.Unlock()
 
-			if s.Reader.Buffered() == 0 {
+			if s.Reader.Buffered() == 0 || s.readDesc == nil {
 				break
 			}
 		}
@@ -95,8 +108,8 @@ func (s *Socket) OnClose(onClose func()) *Socket {
 }
 
 func (s *Socket) Listen() error {
-	if s.onReadable == nil || s.onClose == nil {
-		panic("socket need more callback")
+	if s.onReadable == nil {
+		panic("socket need OnReadable callback")
 	}
 	// Create netpoll event descriptor for conn.
 	// We want to handle only read events of it.
@@ -126,11 +139,16 @@ func (s *Socket) Listen() error {
 }
 
 func (s *Socket) Close() error {
+	if s.readDesc == nil {
+		return nil
+	}
 	err := poller.Stop(s.readDesc)
 	if err != nil {
 		return err
 	}
 	s.readDesc = nil
-	s.onClose()
+	if s.onClose != nil {
+		s.onClose()
+	}
 	return s.Conn.Close()
 }
