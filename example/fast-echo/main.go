@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -28,7 +27,6 @@ func main() {
 	server.Accept(func(conn net.Conn) {
 		socket := fastsocket.NewBufferedSocket(conn, 1014, 1024, time.Hour)
 		socket.OnReadable(func() {
-			io.ReadFull()
 			b, err := ioutil.ReadAll(socket)
 			if err != nil {
 				log.Print(err.Error())

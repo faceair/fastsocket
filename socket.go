@@ -42,6 +42,9 @@ type Socket struct {
 }
 
 func (s *Socket) Read(b []byte) (n int, err error) {
+	if !s.IsActive() {
+		return 0, io.ErrUnexpectedEOF
+	}
 	n, err = s.Reader.Read(b)
 	if err == syscall.EAGAIN {
 		err = io.EOF
@@ -57,7 +60,7 @@ func (s *Socket) ReadFull(buf []byte) (n int, err error) {
 	min := len(buf)
 	for n < min && err == nil {
 		var nn int
-		nn, err = s.Read(buf[n:])
+		nn, err = s.Reader.Read(buf[n:])
 		n += nn
 	}
 	if n >= min {
@@ -69,6 +72,9 @@ func (s *Socket) ReadFull(buf []byte) (n int, err error) {
 }
 
 func (s *Socket) Write(b []byte) (n int, err error) {
+	if !s.IsActive() {
+		return 0, io.ErrUnexpectedEOF
+	}
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
 
@@ -152,7 +158,7 @@ func (s *Socket) Listen() error {
 }
 
 func (s *Socket) Close() error {
-	if s.readDesc == nil {
+	if !s.IsActive() {
 		return nil
 	}
 	err := poller.Stop(s.readDesc)
@@ -164,4 +170,8 @@ func (s *Socket) Close() error {
 		s.onClose()
 	}
 	return s.Conn.Close()
+}
+
+func (s *Socket) IsActive() bool {
+	return s.readDesc != nil
 }
