@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -10,8 +11,6 @@ import (
 
 	"github.com/faceair/fastsocket"
 )
-
-var HTTPNoContent = []byte("HTTP/1.1 204 No Content\nContent-Length: 0\n\r")
 
 func init() {
 	go func() {
@@ -26,18 +25,16 @@ func main() {
 	}
 	exit := make(chan struct{})
 
-	var acceptCount, readableCount, closeCount int
 	server.Accept(func(conn net.Conn) {
-		acceptCount++
 		socket := fastsocket.NewBufferedSocket(conn, 1014, 1024, time.Hour)
 		socket.OnReadable(func() {
-			readableCount++
-			_, err := ioutil.ReadAll(socket)
+			io.ReadFull()
+			b, err := ioutil.ReadAll(socket)
 			if err != nil {
 				log.Print(err.Error())
 				return
 			}
-			_, err = socket.Write(HTTPNoContent)
+			_, err = socket.Write(b)
 			if err != nil {
 				log.Print(err.Error())
 				return
@@ -47,15 +44,7 @@ func main() {
 				log.Print(err.Error())
 				return
 			}
-			closeCount++
 		}).Listen()
 	})
-	go func() {
-		throttle := time.Tick(time.Second)
-		for {
-			<-throttle
-			println(acceptCount, readableCount, closeCount)
-		}
-	}()
 	<-exit
 }

@@ -11,12 +11,13 @@ import (
 	"github.com/mailru/easygo/netpoll"
 )
 
-const DefaultReadBuffSize = 1024
+const DefaultBuffSize = 1024
 
 func NewSocket(conn net.Conn) *Socket {
 	return &Socket{
 		Conn:    conn,
-		Reader:  bufio.NewReaderSize(conn, DefaultReadBuffSize),
+		Reader:  bufio.NewReaderSize(conn, DefaultBuffSize),
+		Writer:  bufio.NewWriterSize(conn, DefaultBuffSize),
 		timeout: time.Minute,
 	}
 }
@@ -32,18 +33,16 @@ func NewBufferedSocket(conn net.Conn, readBuffSize, writeBuffSize int, timeout t
 
 type Socket struct {
 	net.Conn
-	Reader     *bufio.Reader
-	Writer     *bufio.Writer
-	timeout    time.Duration
-	io         sync.Mutex
-	readDesc   *netpoll.Desc
-	writeDesc  *netpoll.Desc
-	onReadable func()
-	onClose    func()
+	Reader              *bufio.Reader
+	Writer              *bufio.Writer
+	timeout             time.Duration
+	readLock, writeLock sync.Mutex
+	readDesc, writeDesc *netpoll.Desc
+	onReadable, onClose func()
 }
 
-func (s *Socket) Read(b []byte) (int, error) {
-	n, err := s.Reader.Read(b)
+func (s *Socket) Read(b []byte) (n int, err error) {
+	n, err = s.Reader.Read(b)
 	if err == syscall.EAGAIN {
 		err = io.EOF
 	}
@@ -51,20 +50,34 @@ func (s *Socket) Read(b []byte) (int, error) {
 		err = io.ErrUnexpectedEOF
 		s.Close()
 	}
-	return n, err
+	return
 }
 
-func (s *Socket) Write(b []byte) (int, error) {
-	n, err := s.Conn.Write(b)
+func (s *Socket) ReadFull(buf []byte) (n int, err error) {
+	min := len(buf)
+	for n < min && err == nil {
+		var nn int
+		nn, err = s.Read(buf[n:])
+		n += nn
+	}
+	if n >= min {
+		err = nil
+	} else if n > 0 && err == io.EOF {
+		err = io.ErrUnexpectedEOF
+	}
+	return
+}
+
+func (s *Socket) Write(b []byte) (n int, err error) {
+	s.writeLock.Lock()
+	defer s.writeLock.Unlock()
+
+	n, err = s.Writer.Write(b)
 	if err == syscall.EBADF {
 		err = io.ErrUnexpectedEOF
 		s.Close()
 	}
-	return n, err
-}
-
-func (s *Socket) WriteDelay(b []byte) (int, error) {
-	return s.Writer.Write(b)
+	return
 }
 
 func (s *Socket) Flush() {
@@ -90,9 +103,9 @@ func (s *Socket) onWritAble(onWritAble func()) {
 func (s *Socket) OnReadable(onReadable func()) *Socket {
 	s.onReadable = func() {
 		for {
-			s.io.Lock()
+			s.readLock.Lock()
 			onReadable()
-			s.io.Unlock()
+			s.readLock.Unlock()
 
 			if s.Reader.Buffered() == 0 || s.readDesc == nil {
 				break

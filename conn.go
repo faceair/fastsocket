@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-func NewConn(fd int) (*Conn, error) {
-	conn := &Conn{
+func NewConn(fd int) (*NonBlockingConn, error) {
+	conn := &NonBlockingConn{
 		fd: fd,
 		f:  os.NewFile(uintptr(fd), "fastsocket.tcp."+strconv.Itoa(fd)),
 	}
@@ -21,25 +21,25 @@ func NewConn(fd int) (*Conn, error) {
 	return conn, conn.setNonblock(true)
 }
 
-// Conn is Non-blocking io connection
-type Conn struct {
+// NonBlockingConn is Non-blocking io connection
+type NonBlockingConn struct {
 	f  *os.File
 	fd int
 }
 
-func (c *Conn) setNonblock(nonblocking bool) error {
+func (c *NonBlockingConn) setNonblock(nonblocking bool) error {
 	return syscall.SetNonblock(c.fd, nonblocking)
 }
 
-func (c *Conn) SetNoDelay(noDelay bool) error {
+func (c *NonBlockingConn) SetNoDelay(noDelay bool) error {
 	return syscall.SetsockoptInt(c.fd, syscall.IPPROTO_TCP, syscall.TCP_NODELAY, boolInt(noDelay))
 }
 
-func (c *Conn) File() (*os.File, error) {
+func (c *NonBlockingConn) File() (*os.File, error) {
 	return c.f, nil
 }
 
-func (c *Conn) Read(b []byte) (n int, err error) {
+func (c *NonBlockingConn) Read(b []byte) (n int, err error) {
 	n, err = fixCount(syscall.Read(c.fd, b))
 	if n == 0 && len(b) > 0 && err == nil {
 		return 0, io.EOF
@@ -47,7 +47,7 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 	return
 }
 
-func (c *Conn) Write(b []byte) (n int, err error) {
+func (c *NonBlockingConn) Write(b []byte) (n int, err error) {
 	n, err = fixCount(syscall.Write(c.fd, b))
 	if n != len(b) && err == nil {
 		err = io.ErrShortWrite
@@ -55,26 +55,26 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 	return
 }
 
-func (c *Conn) Close() error {
+func (c *NonBlockingConn) Close() error {
 	return c.f.Close()
 }
 
-func (c *Conn) LocalAddr() net.Addr {
+func (c *NonBlockingConn) LocalAddr() net.Addr {
 	return nil
 }
 
-func (c *Conn) RemoteAddr() net.Addr {
+func (c *NonBlockingConn) RemoteAddr() net.Addr {
 	return nil
 }
 
-func (c *Conn) SetDeadline(t time.Time) error {
+func (c *NonBlockingConn) SetDeadline(t time.Time) error {
 	return nil
 }
 
-func (c *Conn) SetReadDeadline(t time.Time) error {
+func (c *NonBlockingConn) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
-func (c *Conn) SetWriteDeadline(t time.Time) error {
+func (c *NonBlockingConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
