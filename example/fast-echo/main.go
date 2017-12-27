@@ -1,12 +1,10 @@
 package main
 
 import (
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
-	"time"
 
 	"github.com/faceair/fastsocket"
 )
@@ -25,22 +23,17 @@ func main() {
 	exit := make(chan struct{})
 
 	server.Accept(func(conn net.Conn) {
-		socket := fastsocket.NewBufferedSocket(conn, 1014, 1024, time.Hour)
+		socket := fastsocket.NewSocket(conn)
 		socket.OnReadable(func() {
-			b, err := ioutil.ReadAll(socket)
+			data := make([]byte, 16)
+			_, err := socket.Read(data)
 			if err != nil {
-				log.Print(err.Error())
-				return
+				log.Fatal(err.Error())
 			}
-			_, err = socket.Write(b)
+			log.Printf("%v", data)
+			_, err = socket.Write(data)
 			if err != nil {
-				log.Print(err.Error())
-				return
-			}
-			err = socket.Close()
-			if err != nil {
-				log.Print(err.Error())
-				return
+				log.Fatal(err.Error())
 			}
 		}).Listen()
 	})
