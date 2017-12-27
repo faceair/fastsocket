@@ -11,7 +11,7 @@ import (
 	"github.com/mailru/easygo/netpoll"
 )
 
-const DefaultBuffSize = 1024
+const DefaultBuffSize = 16 * 1024
 
 func NewSocket(conn net.Conn) *Socket {
 	return &Socket{
@@ -42,12 +42,9 @@ type Socket struct {
 }
 
 func (s *Socket) Read(b []byte) (n int, err error) {
-	if !s.IsActive() {
-		return 0, io.ErrUnexpectedEOF
-	}
 	n, err = s.Reader.Read(b)
 	if err == syscall.EAGAIN {
-		err = io.EOF
+		err = nil
 	}
 	if err == syscall.EBADF {
 		err = io.ErrUnexpectedEOF
@@ -56,25 +53,7 @@ func (s *Socket) Read(b []byte) (n int, err error) {
 	return
 }
 
-func (s *Socket) ReadFull(buf []byte) (n int, err error) {
-	min := len(buf)
-	for n < min && err == nil {
-		var nn int
-		nn, err = s.Reader.Read(buf[n:])
-		n += nn
-	}
-	if n >= min {
-		err = nil
-	} else if n > 0 && err == io.EOF {
-		err = io.ErrUnexpectedEOF
-	}
-	return
-}
-
 func (s *Socket) Write(b []byte) (n int, err error) {
-	if !s.IsActive() {
-		return 0, io.ErrUnexpectedEOF
-	}
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
 
@@ -100,7 +79,7 @@ func (s *Socket) onWritAble(onWritAble func()) {
 			s.Close()
 			return
 		}
-		onWritAble()
+		workerPool.Schedule(onWritAble)
 		poller.Stop(s.writeDesc)
 		s.writeDesc = nil
 	})
@@ -113,7 +92,7 @@ func (s *Socket) OnReadable(onReadable func()) *Socket {
 			onReadable()
 			s.readLock.Unlock()
 
-			if s.Reader.Buffered() == 0 || s.readDesc == nil {
+			if s.Reader.Buffered() == 0 || !s.IsActive() {
 				break
 			}
 		}
