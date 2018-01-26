@@ -42,23 +42,23 @@ type Config struct {
 }
 
 // NewFD returns fd with options set in the Config.
-func (cfg *Config) NewFD(network, addr string) (int, error) {
+func (cfg *Config) NewFD(network, addr string) (int, syscall.Sockaddr, error) {
 	sa, soType, err := getSockaddr(network, addr)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
 	fd, err := newSocketCloexec(soType, syscall.SOCK_STREAM, syscall.IPPROTO_TCP)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
 	if err = cfg.fdSetup(fd, sa, addr); err != nil {
 		syscall.Close(fd)
-		return 0, err
+		return 0, nil, err
 	}
 
-	return fd, nil
+	return fd, sa, nil
 }
 
 func (cfg *Config) fdSetup(fd int, sa syscall.Sockaddr, addr string) error {

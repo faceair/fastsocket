@@ -12,18 +12,23 @@ import (
 
 var tcpCfg = &tcplisten.Config{ReusePort: true, DeferAccept: true, FastOpen: true}
 
-func NewServer(addr string) (*Server, error) {
+func NewServer(addrs string) (*Server, error) {
 	server := &Server{}
+	addr, err := getAddr("tcp4", addrs)
+	if err != nil {
+		return nil, err
+	}
 	return server, server.Listen(addr)
 }
 
 type Server struct {
+	addr       Addr
 	listenfd   int
 	acceptDesc *netpoll.Desc
 }
 
-func (s *Server) Listen(addr string) (err error) {
-	s.listenfd, err = tcpCfg.NewFD("tcp4", addr)
+func (s *Server) Listen(addr Addr) (err error) {
+	s.listenfd, _, err = tcpCfg.NewFD(addr.Network(), addr.String())
 	return
 }
 
@@ -37,7 +42,7 @@ func (s *Server) Accept(acceptFn func(net.Conn)) error {
 	acceptErr := make(chan error, 1)
 	poller.Start(s.acceptDesc, func(ev netpoll.Event) {
 		err := workerPool.ScheduleTimeout(time.Millisecond, func() {
-			clientfd, _, err := syscall.Accept(s.listenfd)
+			clientfd, sa, err := syscall.Accept(s.listenfd)
 			if err != nil {
 				if err != syscall.EAGAIN {
 					acceptErr <- err
@@ -46,7 +51,7 @@ func (s *Server) Accept(acceptFn func(net.Conn)) error {
 				acceptErr <- nil
 				return
 			}
-			conn, err := NewConn(clientfd)
+			conn, err := NewConn(clientfd, s.addr, sockaddr2Addr(s.addr.Network(), sa))
 			acceptErr <- err
 			if err == nil {
 				acceptFn(conn)

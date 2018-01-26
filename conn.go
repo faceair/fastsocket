@@ -9,10 +9,12 @@ import (
 	"time"
 )
 
-func NewConn(fd int) (*NonBlockingConn, error) {
+func NewConn(fd int, lad, rad Addr) (*NonBlockingConn, error) {
 	conn := &NonBlockingConn{
-		fd: fd,
-		f:  os.NewFile(uintptr(fd), "fastsocket.tcp."+strconv.Itoa(fd)),
+		fd:  fd,
+		lad: lad,
+		rad: rad,
+		f:   os.NewFile(uintptr(fd), "fastsocket.tcp."+strconv.Itoa(fd)),
 	}
 	err := conn.SetNoDelay(true)
 	if err != nil {
@@ -23,8 +25,10 @@ func NewConn(fd int) (*NonBlockingConn, error) {
 
 // NonBlockingConn is Non-blocking io connection
 type NonBlockingConn struct {
-	f  *os.File
-	fd int
+	f   *os.File
+	fd  int
+	lad Addr
+	rad Addr
 }
 
 func (c *NonBlockingConn) setNonblock(nonblocking bool) error {
@@ -56,15 +60,15 @@ func (c *NonBlockingConn) Write(b []byte) (n int, err error) {
 }
 
 func (c *NonBlockingConn) Close() error {
-	return c.f.Close()
+	return syscall.Close(c.fd)
 }
 
 func (c *NonBlockingConn) LocalAddr() net.Addr {
-	return nil
+	return c.lad
 }
 
 func (c *NonBlockingConn) RemoteAddr() net.Addr {
-	return nil
+	return c.rad
 }
 
 func (c *NonBlockingConn) SetDeadline(t time.Time) error {
