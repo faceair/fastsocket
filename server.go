@@ -44,24 +44,21 @@ func (s *Server) Accept(acceptFn func(net.Conn)) error {
 		err := workerPool.ScheduleTimeout(time.Millisecond, func() {
 			clientfd, sa, err := syscall.Accept(s.listenfd)
 			if err != nil {
-				if err != syscall.EAGAIN {
-					acceptErr <- err
-					return
-				}
-				acceptErr <- nil
+				acceptErr <- err
 				return
 			}
 			conn, err := NewConn(clientfd, s.addr, sockaddr2Addr(s.addr.Network(), sa))
-			acceptErr <- err
-			if err == nil {
-				acceptFn(conn)
+			if err != nil {
+				acceptErr <- err
+				return
 			}
+			workerPool.Schedule(func() { acceptFn(conn) })
 		})
-		if err == nil {
+		for len(acceptErr) > 0 {
 			err = <-acceptErr
 		}
 		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Temporary() || ne.Timeout() || err == ErrScheduleTimeout {
+			if ne, ok := err.(net.Error); ok && (ne.Temporary() || ne.Timeout()) || err == ErrScheduleTimeout {
 				delay := 5 * time.Millisecond
 				log.Printf("accept error: %v; retrying in %s", err, delay)
 				time.Sleep(delay)
