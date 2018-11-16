@@ -86,17 +86,7 @@ func (s *Socket) onWritAble(onWritAble func()) {
 }
 
 func (s *Socket) OnReadable(onReadable func()) *Socket {
-	s.onReadable = func() {
-		for {
-			s.readLock.Lock()
-			onReadable()
-			s.readLock.Unlock()
-
-			if s.Reader.Buffered() == 0 || !s.IsActive() {
-				break
-			}
-		}
-	}
+	s.onReadable = onReadable
 	return s
 }
 
@@ -130,7 +120,17 @@ func (s *Socket) Listen() error {
 		// block the poller's inner loop.
 		// We do not want to spawn a new goroutine to read single message.
 		// But we want to reuse previously spawned goroutine.
-		workerPool.Schedule(s.onReadable)
+		workerPool.Schedule(func() {
+			for {
+				s.readLock.Lock()
+				s.onReadable()
+				s.readLock.Unlock()
+
+				if s.Reader.Buffered() == 0 || !s.IsActive() {
+					break
+				}
+			}
+		})
 	})
 
 	return nil
