@@ -14,21 +14,18 @@ var tcpCfg = &tcplisten.Config{ReusePort: true, DeferAccept: true, FastOpen: tru
 
 func NewServer(addrs string) (*Server, error) {
 	server := &Server{}
-	addr, err := getAddr("tcp4", addrs)
-	if err != nil {
-		return nil, err
-	}
-	return server, server.Listen(addr)
+	return server, server.Listen(addrs)
 }
 
 type Server struct {
-	addr       Addr
+	addr       *Addr
 	listenfd   int
 	acceptDesc *netpoll.Desc
 }
 
-func (s *Server) Listen(addr Addr) (err error) {
-	s.listenfd, _, err = tcpCfg.NewFD(addr.Network(), addr.String())
+func (s *Server) Listen(addrs string) (err error) {
+	s.addr = &Addr{"tcp4", addrs}
+	s.listenfd, _, err = tcpCfg.NewFD(s.addr.Network(), s.addr.String())
 	return
 }
 
@@ -47,7 +44,7 @@ func (s *Server) Accept(acceptFn func(net.Conn)) error {
 				acceptErr <- err
 				return
 			}
-			conn, err := NewConn(clientfd, s.addr, sockaddr2Addr(s.addr.Network(), sa))
+			conn, err := newConn(clientfd, s.addr, sockaddr2Addr(s.addr.Network(), sa))
 			if err != nil {
 				acceptErr <- err
 				return

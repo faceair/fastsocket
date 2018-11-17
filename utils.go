@@ -1,41 +1,15 @@
 package fastsocket
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"syscall"
 )
 
-func sockaddr2Addr(network string, sa syscall.Sockaddr) Addr {
-	switch tcpAddr := sa.(type) {
-	case *syscall.SockaddrInet4:
-		return Addr{network, fmt.Sprintf("%s:%d", tcpAddr.Addr, tcpAddr.Port)}
-	case *syscall.SockaddrInet6:
-		return Addr{network, fmt.Sprintf("%s:%d", tcpAddr.Addr, tcpAddr.Port)}
-	default:
-		return Addr{network, ""}
-	}
-}
-
-func getAddr(network, addr string) (Addr, error) {
-	if network != "tcp4" && network != "tcp6" {
-		return Addr{network, addr}, errors.New("only tcp4 and tcp6 network is supported")
-	}
-
-	tcpAddr, err := net.ResolveTCPAddr(network, addr)
-	if err != nil {
-		return Addr{network, addr}, err
-	}
-
-	switch network {
-	case "tcp4":
-		return Addr{network, fmt.Sprintf("%s:%d", tcpAddr.IP.To4(), tcpAddr.Port)}, nil
-	case "tcp6":
-		return Addr{network, fmt.Sprintf("%s:%d", tcpAddr.IP.To16(), tcpAddr.Port)}, nil
-	default:
-		return Addr{network, addr}, nil
-	}
+func sockaddr2Addr(network string, sa syscall.Sockaddr) *Addr {
+	tcpAddr := sa.(*syscall.SockaddrInet4)
+	ipv4 := net.IPv4(tcpAddr.Addr[0], tcpAddr.Addr[1], tcpAddr.Addr[2], tcpAddr.Addr[3])
+	return &Addr{network, fmt.Sprintf("%s:%d", ipv4, tcpAddr.Port)}
 }
 
 type Addr struct {

@@ -1,46 +1,46 @@
 package fastsocket
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"os"
-	"strconv"
 	"syscall"
 	"time"
 )
 
-func NewConn(fd int, lad, rad Addr) (*NonBlockingConn, error) {
-	conn := &NonBlockingConn{
-		fd:  fd,
-		lad: lad,
-		rad: rad,
-		f:   os.NewFile(uintptr(fd), "fastsocket.tcp."+strconv.Itoa(fd)),
+func newConn(fd int, lad, rad *Addr) (conn *NonBlockingConn, err error) {
+	conn = &NonBlockingConn{
+		fd:   fd,
+		lad:  lad,
+		rad:  rad,
+		file: os.NewFile(uintptr(fd), fmt.Sprintf("fsocket.tcp.%d", fd)),
 	}
-	err := conn.SetNoDelay(true)
+	err = conn.setNoDelay(true)
 	if err != nil {
-		return conn, err
+		return
 	}
-	return conn, conn.setNonblock(true)
+	err = conn.setNonblock(true)
+	return
 }
 
-// NonBlockingConn is Non-blocking io connection
 type NonBlockingConn struct {
-	f   *os.File
-	fd  int
-	lad Addr
-	rad Addr
+	file *os.File
+	fd   int
+	lad  *Addr
+	rad  *Addr
 }
 
 func (c *NonBlockingConn) setNonblock(nonblocking bool) error {
 	return syscall.SetNonblock(c.fd, nonblocking)
 }
 
-func (c *NonBlockingConn) SetNoDelay(noDelay bool) error {
+func (c *NonBlockingConn) setNoDelay(noDelay bool) error {
 	return syscall.SetsockoptInt(c.fd, syscall.IPPROTO_TCP, syscall.TCP_NODELAY, boolInt(noDelay))
 }
 
 func (c *NonBlockingConn) File() (*os.File, error) {
-	return c.f, nil
+	return c.file, nil
 }
 
 func (c *NonBlockingConn) Read(b []byte) (n int, err error) {
