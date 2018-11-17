@@ -16,27 +16,6 @@ var (
 	ErrUnsupported = errors.New("unsupported http feature")
 )
 
-type Request struct {
-	Socket        *fastsocket.Socket
-	Method        string
-	Proto         string
-	URL           *url.URL
-	Header        http.Header
-	ContentLength int64
-	Host          string
-	RemoteAddr    string
-}
-
-func NewRequest(socket *fastsocket.Socket) *Request {
-	return &Request{
-		Socket:        socket,
-		Method:        "GET",
-		Proto:         "HTTP/1.1",
-		Header:        make(http.Header),
-		ContentLength: -1,
-	}
-}
-
 const (
 	eNextHeader int = iota
 	eNextHeaderN
@@ -47,6 +26,29 @@ const (
 	eMLHeaderStart
 	eMLHeaderValue
 )
+
+func newRequest(socket *fastsocket.Socket) *Request {
+	return &Request{
+		Socket:        socket,
+		Response:      newResponse(socket),
+		Method:        "GET",
+		Proto:         "HTTP/1.1",
+		Header:        make(http.Header),
+		ContentLength: -1,
+	}
+}
+
+type Request struct {
+	Socket        *fastsocket.Socket
+	Response      *Response
+	Method        string
+	Proto         string
+	URL           *url.URL
+	Header        http.Header
+	ContentLength int64
+	Host          string
+	RemoteAddr    string
+}
 
 // Parse the buffer as an HTTP Request. The buffer must contain the entire
 // request or Parse will return ErrMissingData for the caller to get more
@@ -132,6 +134,7 @@ loop:
 	if !ok {
 		return 0, ErrMissingData
 	}
+	r.Response.proto = r.Proto
 
 	var headerName []byte
 

@@ -25,7 +25,8 @@ func ListenAndServe(addr string, handler Handler) error {
 		var err error
 
 		buffer := make([]byte, OptimalBufferSize)
-		req, res := NewRequest(socket), NewResponse(socket)
+		req := newRequest(socket)
+		res := req.Response
 
 		socket.OnReadable(func() {
 			offset, err = socket.Read(buffer[length:])
