@@ -4,7 +4,7 @@ faster socket based on epoll/kqueue & goroutine pool
 
 ## Application
 
-1. [Example: TCP Echo Server](https://github.com/faceair/fastsocket/blob/master/example/fastecho/)
+1. [Example: TCP Echo Server](https://github.com/faceair/fastsocket/blob/master/example/fastecho/main.go)
 1. [Example: HTTP Server](https://github.com/faceair/fastsocket/blob/master/example/fasthttp/)
 
 ## Reference

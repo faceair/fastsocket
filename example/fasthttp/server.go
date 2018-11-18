@@ -9,46 +9,21 @@ import (
 	"github.com/faceair/fastsocket"
 )
 
-const OptimalBufferSize = 1500
-
-type Handler func(*Request, *Response)
-
-func ListenAndServe(addr string, handler Handler) error {
+func ListenAndServe(addr string, onRequest OnRequest) error {
 	fsocket, err := fastsocket.NewServer(addr)
 	if err != nil {
 		return err
 	}
 	err = fsocket.Accept(func(conn net.Conn) {
 		socket := fastsocket.NewSocket(conn)
-
-		var length, offset int
-		var err error
-
-		buffer := make([]byte, OptimalBufferSize)
-		req := newRequest(socket)
-		res := req.Response
-
+		stream := newStream(socket)
+		stream.OnRequest(onRequest)
 		socket.OnReadable(func() {
-			offset, err = socket.Read(buffer[length:])
+			err := stream.onData()
 			if err != nil {
-				res.Write([]byte(err.Error()))
-				res.Close()
-				return
+				socket.Close()
 			}
-			length += offset
-			_, err := req.Parse(buffer[:length])
-			if err == ErrMissingData {
-				return
-			}
-			if err != nil {
-				res.Write([]byte(err.Error()))
-				res.Close()
-				return
-			}
-			handler(req, res)
-			res.Close()
 		})
-
 		if err = socket.Listen(); err != nil {
 			panic(err)
 		}

@@ -7,8 +7,11 @@ import (
 )
 
 func main() {
-	fasthttp.ListenAndServe("localhost:8080", func(req *fasthttp.Request, res *fasthttp.Response) {
-		res.Status(http.StatusOK)
-		res.Write([]byte("hello world"))
+	fasthttp.ListenAndServe(":8080", func(req *fasthttp.Request, res *fasthttp.Response) {
+		req.OnBody(func(body []byte) {
+			res.Status(http.StatusOK)
+			res.Write([]byte("hello world"))
+			res.Close()
+		})
 	})
 }

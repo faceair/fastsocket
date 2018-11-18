@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	server, err := fastsocket.NewServer("localhost:8080")
+	server, err := fastsocket.NewServer(":8080")
 	if err != nil {
 		panic(err)
 	}

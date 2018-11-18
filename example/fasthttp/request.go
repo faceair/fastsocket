@@ -1,6 +1,7 @@
 package fasthttp
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net/http"
@@ -27,6 +28,10 @@ const (
 	eMLHeaderValue
 )
 
+const OptimalBufferSize = 1500
+
+type OnBody func([]byte)
+
 func newRequest(socket *fastsocket.Socket) *Request {
 	return &Request{
 		Socket:        socket,
@@ -35,6 +40,8 @@ func newRequest(socket *fastsocket.Socket) *Request {
 		Proto:         "HTTP/1.1",
 		Header:        make(http.Header),
 		ContentLength: -1,
+		buffer:        NewBuffer(make([]byte, OptimalBufferSize)),
+		readBody:      false,
 	}
 }
 
@@ -48,16 +55,47 @@ type Request struct {
 	ContentLength int64
 	Host          string
 	RemoteAddr    string
+	buffer        *Buffer
+	readBody      bool
+	onBody        OnBody
 }
 
-// Parse the buffer as an HTTP Request. The buffer must contain the entire
-// request or Parse will return ErrMissingData for the caller to get more
-// data. (this thusly favors getting a completed request in a single Read()
-// call).
-//
-// Returns the number of bytes used by the header (thus where the body begins).
-// Also can return ErrUnsupported if an HTTP feature is detected but not supported.
-func (r *Request) Parse(input []byte) (int, error) {
+func (r *Request) onData() (headerEnd, bodyEnd bool, err error) {
+	_, err = r.buffer.ReadFrom(r.Socket)
+	if err != nil {
+		return false, false, err
+	}
+	if !r.readBody {
+		n, err := r.parseHeader(r.buffer.Bytes())
+		if err != nil {
+			if err == ErrMissingData {
+				return false, false, nil
+			} else {
+				return true, false, err
+			}
+		}
+		r.buffer.Next(n)
+		r.readBody = true
+	}
+	if r.ContentLength >= 0 {
+		if int64(r.buffer.Len()) >= r.ContentLength {
+			r.onBody(r.buffer.Bytes())
+			return true, true, nil
+		}
+	} else if r.buffer.Len() > 5 {
+		if bytes.Equal(r.buffer.Bytes()[r.buffer.Len()-5:], []byte("0\r\n\r\n")) {
+			r.onBody(r.buffer.Bytes())
+			return true, true, nil
+		}
+	}
+	return true, false, nil
+}
+
+func (r *Request) OnBody(onBody OnBody) {
+	r.onBody = onBody
+}
+
+func (r *Request) parseHeader(input []byte) (int, error) {
 	var headers int
 	var path int
 	var ok bool
@@ -188,6 +226,7 @@ loop:
 			}
 
 			r.Host = r.Header.Get("Host")
+			r.URL.Host = r.Host
 			if sLen := r.Header.Get("Content-Length"); len(sLen) > 0 {
 				if i, err := strconv.ParseInt(sLen, 10, 0); err == nil {
 					r.ContentLength = i
